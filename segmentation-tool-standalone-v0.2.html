@@ -1,0 +1,3289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Segmentation Tool</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      /* Layout: toolbar on top; below it three columns: image strip, drawing stage, label/export panel.
+   The stage stays dark in both themes so class colors read the same everywhere. */
+      :root {
+        --bg: #eef2f1;
+        --panel: #fbfcfc;
+        --panel-2: #e2e9e7;
+        --line: #cdd7d4;
+        --fg: #16201e;
+        --muted: #566562;
+        --accent: #0b6b62;
+        --accent-fg: #ffffff;
+        --accent-soft: #d3ece8;
+        --danger: #b3261e;
+        --ok: #1c7a3d;
+        --stage: #141a19;
+        --ui:
+          'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --mono: 'DM Mono', ui-monospace, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #101514;
+          --panel: #182020;
+          --panel-2: #222c2b;
+          --line: #2c3836;
+          --fg: #e5ece9;
+          --muted: #93a3a0;
+          --accent: #4cc2b4;
+          --accent-fg: #06201c;
+          --accent-soft: #1b3835;
+          --danger: #ff8a80;
+          --ok: #6fd48f;
+          --stage: #0b0f0f;
+          color-scheme: dark;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #101514;
+        --panel: #182020;
+        --panel-2: #222c2b;
+        --line: #2c3836;
+        --fg: #e5ece9;
+        --muted: #93a3a0;
+        --accent: #4cc2b4;
+        --accent-fg: #06201c;
+        --accent-soft: #1b3835;
+        --danger: #ff8a80;
+        --ok: #6fd48f;
+        --stage: #0b0f0f;
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.45 var(--ui);
+        -webkit-font-smoothing: antialiased;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      .app {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 100%;
+        padding-block: 12px;
+        padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px));
+      }
+      @media (min-width: 960px) {
+        .app {
+          height: 100%;
+        }
+      }
+
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 17px;
+        letter-spacing: -0.01em;
+        margin-right: 10px;
+      }
+      .brand svg {
+        width: 24px;
+        height: 24px;
+        color: var(--accent);
+      }
+      .spacer {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: var(--panel);
+      }
+      .seg button {
+        border: 0;
+        background: none;
+        padding: 7px 12px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 7px;
+        align-items: center;
+      }
+      .seg button + button {
+        border-left: 1px solid var(--line);
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--accent);
+        color: var(--accent-fg);
+      }
+      kbd {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 16px;
+        padding: 0 5px;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        opacity: 0.6;
+      }
+      .btn {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 7px 12px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn:hover:not(:disabled) {
+        background: var(--panel-2);
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-fg);
+        font-weight: 600;
+      }
+      .btn.primary:hover:not(:disabled) {
+        filter: brightness(1.08);
+        background: var(--accent);
+      }
+      .btn.sm {
+        padding: 3px 8px;
+        border-radius: 6px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 200px minmax(0, 1fr) 320px;
+        gap: 12px;
+        flex: 1;
+        min-height: 0;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+      }
+      @media (max-width: 959px) {
+        .grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .stage {
+          order: 1;
+          height: 72vh;
+          min-height: 380px;
+        }
+        .imgs {
+          order: 2;
+          max-height: 240px;
+        }
+        .side {
+          order: 3;
+        }
+      }
+      h2 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .pad {
+        padding: 12px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* image strip */
+      .imgs ul {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 6px;
+      }
+      .im {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 6px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .im:hover {
+        background: var(--panel-2);
+      }
+      .im.cur {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+      .im .th {
+        width: 48px;
+        height: 36px;
+        object-fit: cover;
+        border-radius: 4px;
+        background: var(--stage);
+        display: block;
+      }
+      .im .nm {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 500;
+      }
+      .im .meta {
+        font-size: 11px;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .im .meta.done {
+        color: var(--ok);
+      }
+      .x {
+        border: 0;
+        background: none;
+        color: var(--muted);
+        cursor: pointer;
+        border-radius: 4px;
+        width: 24px;
+        height: 24px;
+        line-height: 1;
+        font-size: 16px;
+      }
+      .x:hover:not(:disabled) {
+        color: var(--danger);
+        background: var(--panel-2);
+      }
+      .x:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+
+      /* stage */
+      .stage {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: var(--stage);
+        min-width: 0;
+        min-height: 0;
+      }
+      .cv {
+        position: relative;
+        min-height: 0;
+        min-width: 0;
+        background: var(--stage);
+      }
+      .cv canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      .chip {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+        border-radius: 6px;
+        padding: 4px 9px;
+        font-size: 12px;
+        pointer-events: none;
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.78);
+        color: #fff;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 12px;
+        pointer-events: none;
+        max-width: 90%;
+      }
+      .empty-state {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        color: #c9d4d1;
+        text-align: center;
+        padding: 24px;
+      }
+      .empty-state .btn {
+        background: #222c2b;
+        color: #e5ece9;
+        border-color: #3a4846;
+      }
+      .drop {
+        position: absolute;
+        inset: 8px;
+        border: 2px dashed var(--accent);
+        border-radius: 10px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: rgba(11, 107, 98, 0.35);
+        pointer-events: none;
+        font-weight: 600;
+      }
+      .stage.dragging .drop {
+        display: flex;
+      }
+      .foot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .foot .hint {
+        flex: 1 1 280px;
+        min-width: 0;
+      }
+      .foot .ctl {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+        align-items: center;
+      }
+      .foot label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      input[type='range'] {
+        accent-color: var(--accent);
+        width: 90px;
+      }
+      input[type='checkbox'] {
+        accent-color: var(--accent);
+      }
+
+      /* side panel */
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: var(--panel);
+        z-index: 1;
+      }
+      .tabs button {
+        flex: 1;
+        border: 0;
+        background: none;
+        padding: 10px;
+        cursor: pointer;
+        color: var(--muted);
+        font-weight: 500;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tabs button[aria-selected='true'] {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+      .sec {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sec + .sec {
+        border-top: 1px solid var(--line);
+      }
+      input[type='text'],
+      select {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 8px;
+        min-width: 0;
+      }
+      input[type='text']:focus,
+      select:focus {
+        border-color: var(--accent);
+      }
+      .cls {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr) auto auto 24px;
+        gap: 6px;
+        align-items: center;
+        padding: 4px 6px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .cls:hover {
+        background: var(--panel-2);
+      }
+      .cls.active {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+      .cls input[type='color'] {
+        width: 28px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: none;
+        cursor: pointer;
+      }
+      .cls input.nm {
+        border-color: transparent;
+        background: transparent;
+        width: 100%;
+      }
+      .cls input.nm:hover {
+        border-color: var(--line);
+      }
+      .cls .cnt {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+      }
+      .row input {
+        flex: 1;
+      }
+      .reg {
+        display: grid;
+        grid-template-columns: 12px minmax(0, 1fr) auto 24px;
+        gap: 8px;
+        align-items: center;
+        padding: 4px 6px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .reg:hover {
+        background: var(--panel-2);
+      }
+      .reg.sel {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        display: block;
+      }
+      .reg .pts {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .note.err {
+        color: var(--danger);
+      }
+      .note.ok {
+        color: var(--ok);
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field > span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .chk {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 2px 8px;
+        align-items: start;
+      }
+      .chk .sub {
+        grid-column: 2;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .tree {
+        margin: 0;
+        padding: 10px;
+        background: var(--panel-2);
+        border-radius: 8px;
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-x: auto;
+        white-space: pre;
+      }
+      .btnrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="bar">
+        <div class="brand">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M4.5 15.5 8 5l9.5 3.5L19.5 17z"
+              fill="currentColor"
+              fill-opacity=".18"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+            <g fill="var(--panel)" stroke="currentColor" stroke-width="1.6">
+              <circle cx="4.5" cy="15.5" r="2" />
+              <circle cx="8" cy="5" r="2" />
+              <circle cx="17.5" cy="8.5" r="2" />
+              <circle cx="19.5" cy="17" r="2" />
+            </g>
+          </svg>
+          <span>Segmentation Tool</span>
+        </div>
+        <div class="seg" role="group" aria-label="Drawing tool">
+          <button type="button" data-tool="polygon" aria-pressed="true">
+            Polygon <kbd>P</kbd>
+          </button>
+          <button type="button" data-tool="lasso" aria-pressed="false">
+            Freehand <kbd>L</kbd>
+          </button>
+          <button type="button" data-tool="rect" aria-pressed="false">
+            Box <kbd>B</kbd>
+          </button>
+          <button type="button" data-tool="select" aria-pressed="false">
+            Edit <kbd>V</kbd>
+          </button>
+        </div>
+        <button type="button" class="btn" id="undo" title="Undo (Ctrl+Z)">
+          Undo
+        </button>
+        <button type="button" class="btn" id="redo" title="Redo (Ctrl+Shift+Z)">
+          Redo
+        </button>
+        <div class="spacer"></div>
+        <button
+          type="button"
+          class="btn"
+          id="openZip"
+          title="Continue from an exported ZIP or an unzipped export folder"
+        >
+          Open ZIP
+        </button>
+        <button type="button" class="btn" id="addFiles">Add images</button>
+        <button type="button" class="btn" id="addFolder">Add folder</button>
+        <input type="file" id="zipin" accept=".zip,application/zip" hidden />
+        <input type="file" id="files" accept="image/*" multiple hidden />
+        <input type="file" id="folder" webkitdirectory multiple hidden />
+      </header>
+
+      <main class="grid">
+        <aside class="panel imgs" aria-label="Images">
+          <div class="pad" style="padding-bottom: 0">
+            <h2 id="imgHead">Images</h2>
+          </div>
+          <ul id="imgList"></ul>
+        </aside>
+
+        <section class="stage" id="stage" aria-label="Drawing area">
+          <div class="cv" id="cv">
+            <canvas
+              id="canvas"
+              aria-label="Image with regions. Draw regions with the selected tool."
+            ></canvas>
+            <div class="chip" id="sampleChip" hidden>
+              Sample image with example regions. Add your own images to replace
+              it.
+            </div>
+            <div class="empty-state" id="emptyState" hidden>
+              <strong>No images yet</strong>
+              <span
+                >Drop images or an exported ZIP here, paste an image, or pick
+                files.</span
+              >
+              <div class="btnrow">
+                <button type="button" class="btn" id="emptyAdd">
+                  Add images</button
+                ><button type="button" class="btn" id="emptyZip">
+                  Open ZIP
+                </button>
+              </div>
+            </div>
+            <div class="toast" id="toast" role="status" hidden></div>
+            <div class="drop">Drop images or a ZIP to add them</div>
+          </div>
+          <div class="foot">
+            <div class="hint" id="hint"></div>
+            <div class="ctl">
+              <span class="mono" id="coord">&nbsp;</span>
+              <label
+                >Fill
+                <input
+                  type="range"
+                  id="op"
+                  min="0"
+                  max="80"
+                  value="38"
+                  aria-label="Fill opacity"
+              /></label>
+              <label><input type="checkbox" id="names" checked /> Names</label>
+              <button
+                type="button"
+                class="btn sm"
+                id="zout"
+                aria-label="Zoom out"
+              >
+                −
+              </button>
+              <span class="mono" id="zoomv">100%</span>
+              <button
+                type="button"
+                class="btn sm"
+                id="zin"
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+              <button type="button" class="btn sm" id="fit">
+                Fit <kbd>F</kbd>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel side" aria-label="Classes and export">
+          <div class="tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              id="tabL"
+              data-tab="label"
+              aria-selected="true"
+            >
+              Label
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tabE"
+              data-tab="export"
+              aria-selected="false"
+            >
+              Export
+            </button>
+          </div>
+
+          <div id="paneLabel">
+            <div class="sec">
+              <h2>Classes</h2>
+              <ul id="classList"></ul>
+              <form class="row" id="addCls" autocomplete="off">
+                <input
+                  type="text"
+                  id="newCls"
+                  placeholder="New class name"
+                  maxlength="40"
+                  aria-label="New class name"
+                />
+                <button class="btn" type="submit">Add</button>
+              </form>
+              <p class="note">
+                Press 1 to 9 to pick a class. The mask value for each class is
+                its position in this list.
+              </p>
+            </div>
+            <div class="sec">
+              <h2>Regions on this image</h2>
+              <ul id="regList"></ul>
+              <p class="note" id="noReg">
+                Nothing marked yet. Pick a class, then draw on the image.
+              </p>
+            </div>
+          </div>
+
+          <div id="paneExport" hidden>
+            <div class="sec">
+              <h2>Dataset</h2>
+              <label class="field"
+                ><span>Folder name</span
+                ><input type="text" id="xroot" value="dataset" maxlength="60"
+              /></label>
+              <label class="field"
+                ><span
+                  >Validation share: <b id="xvalo" class="mono">20%</b></span
+                ><input
+                  type="range"
+                  id="xval"
+                  min="0"
+                  max="50"
+                  step="5"
+                  value="20"
+                  style="width: 100%"
+              /></label>
+              <div class="chk">
+                <input type="checkbox" id="xmask" checked /><label for="xmask"
+                  >Mask PNGs</label
+                ><span class="sub"
+                  >8-bit, pixel value is the class number, 0 is background</span
+                >
+              </div>
+              <div class="chk">
+                <input type="checkbox" id="xyolo" checked /><label for="xyolo"
+                  >YOLO polygon labels</label
+                ><span class="sub">labels/*.txt and data.yaml</span>
+              </div>
+              <div class="chk">
+                <input type="checkbox" id="xcoco" checked /><label for="xcoco"
+                  >COCO instances JSON</label
+                ><span class="sub">annotations/instances_*.json</span>
+              </div>
+              <div class="chk">
+                <input type="checkbox" id="xonly" checked /><label for="xonly"
+                  >Keep unlabeled images out of training</label
+                ><span class="sub"
+                  >They go to unlabeled/ so you can finish them later</span
+                >
+              </div>
+            </div>
+            <div class="sec">
+              <h2>Result</h2>
+              <pre class="tree" id="tree"></pre>
+              <p class="note" id="xsum"></p>
+              <div class="btnrow">
+                <button type="button" class="btn primary" id="xzip">
+                  Download ZIP
+                </button>
+                <button type="button" class="btn" id="xdir" hidden>
+                  Save to folder…
+                </button>
+              </div>
+              <p class="note" id="xmsg" role="status"></p>
+              <p class="note">
+                Every ZIP is a full save point. Use Open ZIP to continue later
+                with all images, regions and classes restored.
+              </p>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script>
+      /*PURE-START*/
+      const crcTable = (() => {
+        const t = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+          let c = n;
+          for (let k = 0; k < 8; k++)
+            c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+          t[n] = c >>> 0;
+        }
+        return t;
+      })();
+      function crc(u8) {
+        let c = 0xffffffff;
+        for (let i = 0; i < u8.length; i++)
+          c = crcTable[(c ^ u8[i]) & 255] ^ (c >>> 8);
+        return (c ^ 0xffffffff) >>> 0;
+      }
+      function concatU8(arrs) {
+        let n = 0;
+        for (const a of arrs) n += a.length;
+        const o = new Uint8Array(n);
+        let p = 0;
+        for (const a of arrs) {
+          o.set(a, p);
+          p += a.length;
+        }
+        return o;
+      }
+      const txt = (s) => new TextEncoder().encode(s);
+
+      function dosDateTime(d) {
+        return [
+          (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
+          ((d.getFullYear() - 1980) << 9) |
+            ((d.getMonth() + 1) << 5) |
+            d.getDate(),
+        ];
+      }
+      async function buildZip(entries, onProgress) {
+        const enc = new TextEncoder(),
+          parts = [],
+          cds = [];
+        let offset = 0;
+        const [tm, dt] = dosDateTime(new Date());
+        for (let i = 0; i < entries.length; i++) {
+          const e = entries[i],
+            data = await e.get(),
+            name = enc.encode(e.path),
+            c = crc(data);
+          const lh = new DataView(new ArrayBuffer(30));
+          lh.setUint32(0, 0x04034b50, true);
+          lh.setUint16(4, 20, true);
+          lh.setUint16(6, 0x0800, true);
+          lh.setUint16(8, 0, true);
+          lh.setUint16(10, tm, true);
+          lh.setUint16(12, dt, true);
+          lh.setUint32(14, c, true);
+          lh.setUint32(18, data.length, true);
+          lh.setUint32(22, data.length, true);
+          lh.setUint16(26, name.length, true);
+          lh.setUint16(28, 0, true);
+          parts.push(lh.buffer, name, data);
+          const ch = new DataView(new ArrayBuffer(46));
+          ch.setUint32(0, 0x02014b50, true);
+          ch.setUint16(4, 20, true);
+          ch.setUint16(6, 20, true);
+          ch.setUint16(8, 0x0800, true);
+          ch.setUint16(10, 0, true);
+          ch.setUint16(12, tm, true);
+          ch.setUint16(14, dt, true);
+          ch.setUint32(16, c, true);
+          ch.setUint32(20, data.length, true);
+          ch.setUint32(24, data.length, true);
+          ch.setUint16(28, name.length, true);
+          ch.setUint32(42, offset, true);
+          cds.push(ch.buffer, name);
+          offset += 30 + name.length + data.length;
+          if (onProgress) onProgress(i + 1, entries.length);
+        }
+        let cdSize = 0;
+        for (const p of cds) cdSize += p.byteLength;
+        const end = new DataView(new ArrayBuffer(22));
+        end.setUint32(0, 0x06054b50, true);
+        end.setUint16(8, entries.length, true);
+        end.setUint16(10, entries.length, true);
+        end.setUint32(12, cdSize, true);
+        end.setUint32(16, offset, true);
+        return new Blob([...parts, ...cds, end.buffer], {
+          type: 'application/zip',
+        });
+      }
+
+      function u32(n) {
+        const b = new Uint8Array(4);
+        new DataView(b.buffer).setUint32(0, n);
+        return b;
+      }
+      function pngChunk(type, data) {
+        const body = new Uint8Array(4 + data.length);
+        body.set(txt(type), 0);
+        body.set(data, 4);
+        return concatU8([u32(data.length), body, u32(crc(body))]);
+      }
+      async function deflate(u8) {
+        const s = new Blob([u8])
+          .stream()
+          .pipeThrough(new CompressionStream('deflate'));
+        return new Uint8Array(await new Response(s).arrayBuffer());
+      }
+      async function encodeGrayPng(m, w, h) {
+        const raw = new Uint8Array((w + 1) * h);
+        for (let y = 0; y < h; y++)
+          raw.set(m.subarray(y * w, (y + 1) * w), y * (w + 1) + 1);
+        const z = await deflate(raw);
+        const ihdr = new Uint8Array(13),
+          dv = new DataView(ihdr.buffer);
+        dv.setUint32(0, w);
+        dv.setUint32(4, h);
+        ihdr[8] = 8;
+        return concatU8([
+          Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10),
+          pngChunk('IHDR', ihdr),
+          pngChunk('IDAT', z),
+          pngChunk('IEND', new Uint8Array(0)),
+        ]);
+      }
+
+      function polyArea(p) {
+        let a = 0;
+        for (let i = 0, n = p.length; i < n; i++) {
+          const q = p[(i + 1) % n];
+          a += p[i][0] * q[1] - q[0] * p[i][1];
+        }
+        return a / 2;
+      }
+      function polyBBox(p) {
+        let x0 = Infinity,
+          y0 = Infinity,
+          x1 = -Infinity,
+          y1 = -Infinity;
+        for (const q of p) {
+          if (q[0] < x0) x0 = q[0];
+          if (q[0] > x1) x1 = q[0];
+          if (q[1] < y0) y0 = q[1];
+          if (q[1] > y1) y1 = q[1];
+        }
+        return [x0, y0, x1, y1];
+      }
+      function pointInPoly(pt, p) {
+        let inside = false;
+        for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+          const a = p[i],
+            b = p[j];
+          if (
+            a[1] > pt[1] !== b[1] > pt[1] &&
+            pt[0] < ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0]
+          )
+            inside = !inside;
+        }
+        return inside;
+      }
+      function segDist(p, a, b) {
+        const dx = b[0] - a[0],
+          dy = b[1] - a[1],
+          l = dx * dx + dy * dy;
+        let t = l ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l : 0;
+        t = Math.max(0, Math.min(1, t));
+        const x = a[0] + t * dx,
+          y = a[1] + t * dy;
+        return { d: Math.hypot(p[0] - x, p[1] - y), pt: [x, y] };
+      }
+      function simplify(pts, eps) {
+        if (pts.length < 4) return pts.slice();
+        const keep = new Uint8Array(pts.length);
+        keep[0] = keep[pts.length - 1] = 1;
+        const stack = [[0, pts.length - 1]];
+        while (stack.length) {
+          const [s, e] = stack.pop();
+          let md = 0,
+            mi = -1;
+          for (let i = s + 1; i < e; i++) {
+            const d = segDist(pts[i], pts[s], pts[e]).d;
+            if (d > md) {
+              md = d;
+              mi = i;
+            }
+          }
+          if (md > eps && mi > 0) {
+            keep[mi] = 1;
+            stack.push([s, mi], [mi, e]);
+          }
+        }
+        return pts.filter((_, i) => keep[i]);
+      }
+      function fillPoly(m, w, h, pts, v) {
+        const bb = polyBBox(pts),
+          y0 = Math.max(0, Math.floor(bb[1])),
+          y1 = Math.min(h - 1, Math.ceil(bb[3])),
+          n = pts.length;
+        for (let y = y0; y <= y1; y++) {
+          const yc = y + 0.5,
+            xs = [];
+          for (let i = 0; i < n; i++) {
+            const a = pts[i],
+              b = pts[(i + 1) % n];
+            if ((a[1] <= yc && b[1] > yc) || (b[1] <= yc && a[1] > yc))
+              xs.push(a[0] + ((yc - a[1]) * (b[0] - a[0])) / (b[1] - a[1]));
+          }
+          xs.sort((p, q) => p - q);
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const xa = Math.max(0, Math.ceil(xs[k] - 0.5)),
+              xb = Math.min(w, Math.ceil(xs[k + 1] - 0.5));
+            if (xb > xa) m.fill(v, y * w + xa, y * w + xb);
+          }
+        }
+      }
+      function rasterMask(w, h, regions, classes) {
+        const m = new Uint8Array(w * h);
+        for (const r of regions) {
+          const i = classes.findIndex((c) => c.id === r.cls);
+          if (i < 0 || r.pts.length < 3) continue;
+          fillPoly(m, w, h, r.pts, i + 1);
+        }
+        return m;
+      }
+      const r2 = (n) => Math.round(n * 100) / 100;
+      function yoloText(img, classes) {
+        const lines = [];
+        for (const r of img.regions) {
+          const i = classes.findIndex((c) => c.id === r.cls);
+          if (i < 0 || r.pts.length < 3) continue;
+          const c = [];
+          for (const p of r.pts) {
+            c.push(
+              Math.min(1, Math.max(0, p[0] / img.w)).toFixed(6),
+              Math.min(1, Math.max(0, p[1] / img.h)).toFixed(6),
+            );
+          }
+          lines.push(i + ' ' + c.join(' '));
+        }
+        return lines.length ? lines.join('\n') + '\n' : '';
+      }
+      function cocoJson(items, classes, root) {
+        const images = [],
+          annotations = [];
+        let aid = 1;
+        items.forEach((it, k) => {
+          const im = it.img;
+          images.push({
+            id: k + 1,
+            file_name: it.base + it.ext,
+            width: im.w,
+            height: im.h,
+          });
+          for (const r of im.regions) {
+            const ci = classes.findIndex((c) => c.id === r.cls);
+            if (ci < 0 || r.pts.length < 3) continue;
+            const pts = r.pts.map((p) => [
+              Math.min(im.w, Math.max(0, p[0])),
+              Math.min(im.h, Math.max(0, p[1])),
+            ]);
+            const bb = polyBBox(pts);
+            annotations.push({
+              id: aid++,
+              image_id: k + 1,
+              category_id: ci + 1,
+              segmentation: [pts.flatMap((p) => [r2(p[0]), r2(p[1])])],
+              area: r2(Math.abs(polyArea(pts))),
+              bbox: [
+                r2(bb[0]),
+                r2(bb[1]),
+                r2(bb[2] - bb[0]),
+                r2(bb[3] - bb[1]),
+              ],
+              iscrowd: 0,
+            });
+          }
+        });
+        return JSON.stringify(
+          {
+            info: { description: root, date_created: new Date().toISOString() },
+            licenses: [],
+            images,
+            annotations,
+            categories: classes.map((c, i) => ({
+              id: i + 1,
+              name: c.name,
+              supercategory: '',
+            })),
+          },
+          null,
+          1,
+        );
+      }
+      function mulberry32(a) {
+        return function () {
+          a |= 0;
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      function sanitizeBase(s) {
+        return (
+          s
+            .replace(/\.[^.]+$/, '')
+            .normalize('NFKD')
+            .replace(/[^\w.-]+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'image'
+        );
+      }
+      function planExport(images, opts) {
+        const used = new Set();
+        const all = images.map((img) => {
+          const base0 = sanitizeBase(img.name);
+          let b = base0,
+            n = 2;
+          while (used.has(b.toLowerCase())) b = base0 + '_' + n++;
+          used.add(b.toLowerCase());
+          const m = img.name.match(/\.[^.]+$/);
+          const ext =
+            img.orient > 1
+              ? '.jpg'
+              : m
+                ? m[0].toLowerCase().replace('.jpeg', '.jpg')
+                : '.png';
+          return { img, base: b, ext, split: 'train' };
+        });
+        const items = all.filter(
+          (it) => !opts.onlyLabeled || it.img.regions.length > 0,
+        );
+        const skipped = all.filter((it) => !items.includes(it));
+        skipped.forEach((it) => {
+          it.split = 'unlabeled';
+        });
+        const n = items.length;
+        if (opts.valPct > 0 && n >= 2) {
+          const nv = Math.min(
+            Math.max(1, Math.round((n * opts.valPct) / 100)),
+            n - 1,
+          );
+          const free = [];
+          let have = 0;
+          items.forEach((it, i) => {
+            const h = it.img.split;
+            if (h === 'val') {
+              it.split = 'val';
+              have++;
+            } else if (h !== 'train') free.push(i);
+          });
+          const rnd = mulberry32(((n * 2654435761) >>> 0) ^ 1234);
+          for (let i = free.length - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            [free[i], free[j]] = [free[j], free[i]];
+          }
+          for (
+            let k = 0;
+            k < Math.min(Math.max(0, nv - have), free.length);
+            k++
+          )
+            items[free[k]].split = 'val';
+          if (!items.some((it) => it.split === 'train'))
+            items[0].split = 'train';
+        }
+        const counts = { train: 0, val: 0, unlabeled: skipped.length };
+        items.forEach((it) => counts[it.split]++);
+        return { items, skipped, counts };
+      }
+      function projectJson(plan, classes) {
+        const rel = (it) =>
+          (it.split === 'unlabeled'
+            ? 'unlabeled/'
+            : 'images/' + it.split + '/') +
+          it.base +
+          it.ext;
+        return {
+          app: 'seg-tool',
+          version: 0.2,
+          created: new Date().toISOString(),
+          classes: classes.map((c) => ({ name: c.name, color: c.color })),
+          images: [...plan.items, ...plan.skipped].map((it) => ({
+            file: rel(it),
+            width: it.img.w,
+            height: it.img.h,
+            split: it.split,
+            regions: it.img.regions
+              .filter(
+                (r) => r.pts.length >= 3 && classes.some((c) => c.id === r.cls),
+              )
+              .map((r) => ({
+                cls: classes.find((c) => c.id === r.cls).name,
+                pts: r.pts,
+              })),
+          })),
+        };
+      }
+      function entryList(plan, classes, opts, imageBytes) {
+        const E = [],
+          root = opts.root,
+          add = (path, get) => E.push({ path: root + '/' + path, get });
+        add('project.json', async () =>
+          txt(JSON.stringify(projectJson(plan, classes))),
+        );
+        add('classes.txt', async () =>
+          txt(classes.map((c) => c.name).join('\n') + '\n'),
+        );
+        add('classes.json', async () =>
+          txt(
+            JSON.stringify(
+              classes.map((c, i) => ({
+                mask_value: i + 1,
+                yolo_id: i,
+                coco_id: i + 1,
+                name: c.name,
+                color: c.color,
+              })),
+              null,
+              1,
+            ),
+          ),
+        );
+        const splits = ['train', 'val'].filter((s) => plan.counts[s] > 0);
+        if (opts.yolo)
+          add('data.yaml', async () =>
+            txt(
+              '# Ultralytics YOLO segmentation dataset\npath: .\ntrain: images/train\nval: images/' +
+                (plan.counts.val > 0 ? 'val' : 'train') +
+                '\nnames:\n' +
+                classes
+                  .map((c, i) => '  ' + i + ': ' + JSON.stringify(c.name))
+                  .join('\n') +
+                '\n',
+            ),
+          );
+        for (const it of plan.items) {
+          add('images/' + it.split + '/' + it.base + it.ext, () =>
+            imageBytes(it),
+          );
+          if (opts.masks)
+            add('masks/' + it.split + '/' + it.base + '.png', async () =>
+              encodeGrayPng(
+                rasterMask(it.img.w, it.img.h, it.img.regions, classes),
+                it.img.w,
+                it.img.h,
+              ),
+            );
+          if (opts.yolo)
+            add('labels/' + it.split + '/' + it.base + '.txt', async () =>
+              txt(yoloText(it.img, classes)),
+            );
+        }
+        for (const it of plan.skipped)
+          add('unlabeled/' + it.base + it.ext, () => imageBytes(it));
+        if (opts.coco)
+          for (const s of splits)
+            add('annotations/instances_' + s + '.json', async () =>
+              txt(
+                cocoJson(
+                  plan.items.filter((it) => it.split === s),
+                  classes,
+                  root,
+                ),
+              ),
+            );
+        return E;
+      }
+      function treeText(plan, opts) {
+        const f = (n) => n + (n === 1 ? ' file' : ' files'),
+          sp = ['train', 'val'].filter((s) => plan.counts[s] > 0);
+        const nodes = [['project.json'], ['classes.txt'], ['classes.json']];
+        if (opts.yolo) nodes.push(['data.yaml']);
+        const sub = () => sp.map((s) => [s + '/', f(plan.counts[s])]);
+        if (plan.items.length) {
+          nodes.push(['images/', sub()]);
+          if (opts.masks) nodes.push(['masks/', sub()]);
+          if (opts.yolo) nodes.push(['labels/', sub()]);
+        }
+        if (opts.coco && plan.items.length)
+          nodes.push([
+            'annotations/',
+            sp.map((s) => ['instances_' + s + '.json']),
+          ]);
+        if (plan.skipped.length)
+          nodes.push(['unlabeled/', [], f(plan.skipped.length)]);
+        const lines = [opts.root + '/'];
+        nodes.forEach((nd, i) => {
+          const last = i === nodes.length - 1,
+            pre = last ? '└─ ' : '├─ ',
+            cont = last ? '   ' : '│  ';
+          lines.push(pre + nd[0] + (nd[2] ? '  ' + nd[2] : ''));
+          if (Array.isArray(nd[1]))
+            nd[1].forEach((c, j) => {
+              const l2 = j === nd[1].length - 1;
+              lines.push(
+                cont + (l2 ? '└─ ' : '├─ ') + c[0] + (c[1] ? '  ' + c[1] : ''),
+              );
+            });
+        });
+        return lines.join('\n');
+      }
+
+      /* ---- reading a dataset back in ---- */
+      async function readZip(file) {
+        const size = file.size,
+          tl = Math.min(size, 65557);
+        if (size < 22) throw new Error('This file is not a ZIP archive.');
+        const tail = new DataView(await file.slice(size - tl).arrayBuffer());
+        let eo = -1;
+        for (let i = tl - 22; i >= 0; i--)
+          if (tail.getUint32(i, true) === 0x06054b50) {
+            eo = i;
+            break;
+          }
+        if (eo < 0) throw new Error('This file is not a ZIP archive.');
+        const count = tail.getUint16(eo + 10, true),
+          cdSize = tail.getUint32(eo + 12, true),
+          cdOff = tail.getUint32(eo + 16, true);
+        if (count === 0xffff || cdOff === 0xffffffff)
+          throw new Error('ZIP64 archives are not supported.');
+        const cd = new DataView(
+            await file.slice(cdOff, cdOff + cdSize).arrayBuffer(),
+          ),
+          u8 = new Uint8Array(cd.buffer),
+          dec = new TextDecoder(),
+          out = [];
+        let p = 0;
+        for (let i = 0; i < count; i++) {
+          if (p + 46 > cd.byteLength || cd.getUint32(p, true) !== 0x02014b50)
+            throw new Error('The ZIP index is damaged.');
+          const method = cd.getUint16(p + 10, true),
+            csize = cd.getUint32(p + 20, true),
+            nl = cd.getUint16(p + 28, true),
+            xl = cd.getUint16(p + 30, true),
+            cl = cd.getUint16(p + 32, true),
+            off = cd.getUint32(p + 42, true);
+          const path = dec.decode(u8.subarray(p + 46, p + 46 + nl));
+          p += 46 + nl + xl + cl;
+          if (path.endsWith('/')) continue;
+          out.push({
+            path,
+            blob: async () => {
+              const h = new DataView(
+                await file.slice(off, off + 30).arrayBuffer(),
+              );
+              const s =
+                  off + 30 + h.getUint16(26, true) + h.getUint16(28, true),
+                raw = file.slice(s, s + csize);
+              if (method === 0) return raw;
+              if (method === 8) {
+                if (typeof DecompressionStream === 'undefined')
+                  throw new Error(
+                    'This browser cannot unpack compressed ZIPs.',
+                  );
+                return new Response(
+                  raw
+                    .stream()
+                    .pipeThrough(new DecompressionStream('deflate-raw')),
+                ).blob();
+              }
+              throw new Error('Unsupported ZIP compression in ' + path + '.');
+            },
+          });
+        }
+        return out;
+      }
+      const IMG_EXT = /\.(png|jpe?g|webp|bmp|gif)$/i;
+      const HEX6 = /^#[0-9a-f]{6}$/i;
+      function cleanPts(a) {
+        if (!Array.isArray(a)) return null;
+        const o = [];
+        for (const p of a) {
+          if (!Array.isArray(p) || !isFinite(p[0]) || !isFinite(p[1]))
+            return null;
+          o.push([+p[0], +p[1]]);
+        }
+        return o.length >= 3 ? o : null;
+      }
+      function yoloParse(text) {
+        const out = [];
+        for (const line of text.split(/\r?\n/)) {
+          const t = line.trim().split(/\s+/);
+          if (t.length < 7 || t.length % 2 === 0) continue;
+          const nums = t.map(Number);
+          if (nums.some((n) => !isFinite(n))) continue;
+          const pts = [];
+          for (let i = 1; i + 1 < nums.length; i += 2)
+            pts.push([nums[i], nums[i + 1]]);
+          out.push({ ci: nums[0], pts });
+        }
+        return out;
+      }
+      function yamlNames(text) {
+        const m = text.match(/^names:[ \t]*\r?\n((?:[ \t]+.*(?:\r?\n|$))+)/m);
+        if (!m) return null;
+        const arr = [];
+        for (const l of m[1].split(/\r?\n/)) {
+          const k = l.match(/^\s*(\d+)\s*:\s*(.+?)\s*$/);
+          if (!k) continue;
+          let v = k[2];
+          try {
+            v = JSON.parse(v);
+          } catch (e) {
+            v = v.replace(/^["']|["']$/g, '');
+          }
+          arr[+k[1]] = String(v);
+        }
+        for (let i = 0; i < arr.length; i++)
+          if (arr[i] === undefined) return null;
+        return arr.length ? arr : null;
+      }
+      async function parseDataset(entries) {
+        const ok = (p) =>
+          !/(^|\/)__MACOSX\//.test(p) && !/(^|\/)\.[^\/]*$/.test(p);
+        const E = entries
+          .map((e) => ({ p: e.path.replace(/\\/g, '/'), blob: e.blob }))
+          .filter((e) => ok(e.p));
+        const byPath = new Map(E.map((e) => [e.p.toLowerCase(), e]));
+        const base = (p) => p.slice(p.lastIndexOf('/') + 1),
+          stem = (n) => n.replace(/\.[^.]+$/, '');
+        const jtext = async (e) => (await e.blob()).text();
+        const byName = (a, b) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true });
+        const warnings = [];
+        const pj = E.find((e) => /(^|\/)project\.json$/i.test(e.p));
+        if (pj) {
+          let j = null;
+          try {
+            j = JSON.parse(await jtext(pj));
+          } catch (err) {}
+          if (
+            j &&
+            j.app === 'seg-tool' &&
+            Array.isArray(j.classes) &&
+            Array.isArray(j.images)
+          ) {
+            const prefix = pj.p.slice(0, pj.p.length - 'project.json'.length);
+            const classes = j.classes
+              .filter((c) => c && typeof c.name === 'string' && c.name.trim())
+              .map((c) => ({
+                name: c.name.trim().slice(0, 40),
+                color: HEX6.test(c.color) ? c.color : null,
+              }));
+            const images = [];
+            for (const im of j.images) {
+              const f =
+                im && typeof im.file === 'string'
+                  ? byPath.get((prefix + im.file).toLowerCase())
+                  : null;
+              if (!f) {
+                warnings.push('Missing image ' + (im && im.file));
+                continue;
+              }
+              const regions = (Array.isArray(im.regions) ? im.regions : [])
+                .map((r) => ({
+                  cls: String(r && r.cls),
+                  pts: cleanPts(r && r.pts),
+                }))
+                .filter((r) => r.pts);
+              images.push({
+                name: base(f.p),
+                blob: f.blob,
+                split:
+                  im.split === 'train' || im.split === 'val' ? im.split : null,
+                regions,
+              });
+            }
+            images.sort(byName);
+            return { source: 'project', classes, images, warnings };
+          }
+        }
+        let names = null;
+        const colors = {};
+        const cj = E.find((e) => /(^|\/)classes\.json$/i.test(e.p));
+        if (cj) {
+          try {
+            const a = JSON.parse(await jtext(cj));
+            if (Array.isArray(a)) {
+              a.sort((x, y) => (x.mask_value || 0) - (y.mask_value || 0));
+              names = a.map((c) => String(c.name));
+              a.forEach((c) => {
+                if (HEX6.test(c.color)) colors[String(c.name)] = c.color;
+              });
+            }
+          } catch (err) {}
+        }
+        if (!names) {
+          const ct = E.find((e) => /(^|\/)classes\.txt$/i.test(e.p));
+          if (ct) {
+            const a = (await jtext(ct))
+              .split(/\r?\n/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            if (a.length) names = a;
+          }
+        }
+        if (!names) {
+          const y = E.find((e) => /(^|\/)data\.ya?ml$/i.test(e.p));
+          if (y) names = yamlNames(await jtext(y));
+        }
+        const cocoImgs = new Map(),
+          cocoCats = new Map();
+        for (const f of E.filter((e) =>
+          /(^|\/)annotations\/[^\/]*\.json$/i.test(e.p),
+        )) {
+          let j;
+          try {
+            j = JSON.parse(await jtext(f));
+          } catch (err) {
+            continue;
+          }
+          if (!j || !Array.isArray(j.images) || !Array.isArray(j.annotations))
+            continue;
+          (j.categories || []).forEach((c) =>
+            cocoCats.set(c.id, String(c.name)),
+          );
+          const idm = new Map();
+          for (const im of j.images) {
+            const o = { regions: [] };
+            cocoImgs.set(base(String(im.file_name)).toLowerCase(), o);
+            idm.set(im.id, o);
+          }
+          for (const a of j.annotations) {
+            const o = idm.get(a.image_id),
+              nm = cocoCats.get(a.category_id);
+            if (!o || !nm || !Array.isArray(a.segmentation)) continue;
+            for (const poly of a.segmentation) {
+              if (!Array.isArray(poly) || poly.length < 6 || poly.length % 2)
+                continue;
+              const pts = [];
+              for (let i = 0; i < poly.length; i += 2)
+                pts.push([+poly[i], +poly[i + 1]]);
+              const c = cleanPts(pts);
+              if (c) o.regions.push({ cls: nm, pts: c });
+            }
+          }
+        }
+        if (!names && cocoCats.size)
+          names = [...cocoCats.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map((x) => x[1]);
+        const labels = new Map();
+        for (const e of E) {
+          const m = e.p.match(
+            /(^|\/)labels\/(?:(train|val|test)\/)?([^\/]+)\.txt$/i,
+          );
+          if (m)
+            labels.set(
+              (m[2] || '').toLowerCase() + '|' + m[3].toLowerCase(),
+              e,
+            );
+        }
+        const images = [];
+        for (const e of E) {
+          const m = e.p.match(
+            /(^|\/)(images|unlabeled)\/(?:(train|val|test)\/)?([^\/]+)$/i,
+          );
+          if (!m || !IMG_EXT.test(m[4])) continue;
+          const name = m[4],
+            kind = m[2].toLowerCase(),
+            sp = (m[3] || '').toLowerCase();
+          const d = {
+            name,
+            blob: e.blob,
+            split:
+              kind === 'images'
+                ? sp === 'val'
+                  ? 'val'
+                  : sp === 'test'
+                    ? null
+                    : 'train'
+                : null,
+            regions: [],
+          };
+          if (kind === 'images') {
+            const co = cocoImgs.get(name.toLowerCase());
+            if (co) d.regions = co.regions;
+            else {
+              const le = labels.get(sp + '|' + stem(name).toLowerCase());
+              if (le) {
+                d.norm = [];
+                for (const r of yoloParse(await jtext(le))) {
+                  const nm = names && names[r.ci];
+                  if (nm) d.norm.push({ cls: nm, pts: r.pts });
+                }
+              }
+            }
+          }
+          images.push(d);
+        }
+        images.sort(byName);
+        return {
+          source: cocoImgs.size ? 'coco' : labels.size ? 'yolo' : 'none',
+          classes: (names || []).map((n) => ({
+            name: n,
+            color: colors[n] || null,
+          })),
+          images,
+          warnings,
+        };
+      }
+
+      /*PURE-END*/
+
+      /* ---------- app ---------- */
+      (() => {
+        'use strict';
+        const $ = (s) => document.querySelector(s);
+        const esc = (s) =>
+          String(s).replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+              })[c],
+          );
+        const uid = () => Math.random().toString(36).slice(2, 9);
+        const store = {
+          get(k) {
+            try {
+              const v = localStorage.getItem(k);
+              return v ? JSON.parse(v) : null;
+            } catch (e) {
+              return null;
+            }
+          },
+          set(k, v) {
+            try {
+              localStorage.setItem(k, JSON.stringify(v));
+            } catch (e) {}
+          },
+        };
+        const PALETTE = [
+          '#2e86ab',
+          '#e4572e',
+          '#76b041',
+          '#f2b134',
+          '#8e5ea2',
+          '#17bebb',
+          '#d1495b',
+          '#4f6d7a',
+          '#ff8fa3',
+          '#9c6644',
+          '#3d9970',
+          '#b5651d',
+        ];
+
+        let classes, nextClassId;
+        const savedC = store.get('mr.classes');
+        if (savedC && Array.isArray(savedC.classes) && savedC.classes.length) {
+          classes = savedC.classes;
+          nextClassId = savedC.next || 100;
+        } else {
+          classes = ['sky', 'road', 'vegetation', 'vehicle'].map((n, i) => ({
+            id: i + 1,
+            name: n,
+            color: PALETTE[i],
+          }));
+          nextClassId = 5;
+        }
+        const saveClasses = () =>
+          store.set('mr.classes', { classes, next: nextClassId });
+
+        let images = [],
+          cur = -1,
+          activeCls = classes[0].id,
+          tool = 'polygon',
+          view = { s: 1, ox: 0, oy: 0 };
+        let draft = null,
+          sel = null,
+          mouse = null,
+          drag = null,
+          pan = null,
+          spaceDown = false,
+          fillOp = 0.38,
+          showNames = true,
+          W = 0,
+          H = 0,
+          dpr = 1,
+          busy = false;
+        const curImg = () => images[cur] || null;
+        const clsOf = (id) => classes.find((c) => c.id === id);
+        function pickColor() {
+          const used = new Set(classes.map((c) => c.color));
+          return (
+            PALETTE.find((p) => !used.has(p)) ||
+            '#' +
+              Math.floor(Math.random() * 0xffffff)
+                .toString(16)
+                .padStart(6, '0')
+          );
+        }
+        function classIdFor(v) {
+          if (typeof v === 'number') return clsOf(v) ? v : classes[0].id;
+          const nm = String(v || '').trim();
+          if (!nm) return classes[0].id;
+          const f = classes.find(
+            (c) => c.name.toLowerCase() === nm.toLowerCase(),
+          );
+          if (f) return f.id;
+          if (classes.length >= 255) return classes[0].id;
+          const c = {
+            id: nextClassId++,
+            name: nm.slice(0, 40),
+            color: pickColor(),
+          };
+          classes.push(c);
+          saveClasses();
+          return c.id;
+        }
+        const serializeRegions = (rs) =>
+          rs.map((r) => ({
+            id: r.id,
+            cls: (clsOf(r.cls) || {}).name,
+            pts: r.pts,
+          }));
+
+        const canvas = $('#canvas'),
+          ctx = canvas.getContext('2d');
+
+        /* downloads: artifact capability when hosted, plain link when opened as a file */
+        let downloadsCap = null;
+        const framed = (() => {
+          try {
+            return window.top !== window.self;
+          } catch (e) {
+            return true;
+          }
+        })();
+        if (window.claude && window.claude.use) {
+          window.claude
+            .use('downloads')
+            .then((c) => {
+              downloadsCap = c;
+              renderExport();
+            })
+            .catch(() => {});
+        }
+        if (typeof window.showDirectoryPicker === 'function' && !framed)
+          $('#xdir').hidden = false;
+
+        /* ---------- toast ---------- */
+        let toastT = 0;
+        function toast(msg, ms) {
+          const t = $('#toast');
+          t.textContent = msg;
+          t.hidden = false;
+          clearTimeout(toastT);
+          toastT = setTimeout(() => {
+            t.hidden = true;
+          }, ms || 3200);
+        }
+
+        /* ---------- loading images ---------- */
+        async function jpegOrientation(file) {
+          try {
+            if (!/jpe?g/i.test(file.type || file.name)) return 1;
+            const b = new DataView(await file.slice(0, 65536).arrayBuffer());
+            if (b.getUint16(0) !== 0xffd8) return 1;
+            let off = 2;
+            while (off < b.byteLength - 4) {
+              const m = b.getUint16(off);
+              off += 2;
+              if (m === 0xffe1) {
+                if (b.getUint32(off + 2) !== 0x45786966) return 1;
+                const t = off + 8,
+                  le = b.getUint16(t) === 0x4949,
+                  g16 = (o) => b.getUint16(o, le),
+                  g32 = (o) => b.getUint32(o, le);
+                const ifd = t + g32(t + 4),
+                  n = g16(ifd);
+                for (let i = 0; i < n; i++) {
+                  const e = ifd + 2 + i * 12;
+                  if (g16(e) === 0x0112) return g16(e + 8);
+                }
+                return 1;
+              }
+              if ((m & 0xff00) !== 0xff00) break;
+              off += b.getUint16(off);
+            }
+          } catch (e) {}
+          return 1;
+        }
+        function makeThumb(el) {
+          const c = document.createElement('canvas');
+          c.width = 96;
+          c.height = 72;
+          const x = c.getContext('2d');
+          x.fillStyle = '#0b0f0f';
+          x.fillRect(0, 0, 96, 72);
+          const s = Math.max(96 / el.naturalWidth, 72 / el.naturalHeight);
+          x.drawImage(
+            el,
+            (96 - el.naturalWidth * s) / 2,
+            (72 - el.naturalHeight * s) / 2,
+            el.naturalWidth * s,
+            el.naturalHeight * s,
+          );
+          return c.toDataURL('image/jpeg', 0.7);
+        }
+        async function loadImage(file, opts = {}) {
+          const key = file.name + '|' + file.size + '|' + file.lastModified;
+          if (!opts.sample && images.some((i) => i.key === key)) return null;
+          const url = URL.createObjectURL(file),
+            el = new Image();
+          try {
+            await new Promise((res, rej) => {
+              el.onload = res;
+              el.onerror = rej;
+              el.src = url;
+            });
+          } catch (e) {
+            URL.revokeObjectURL(url);
+            toast('Could not open ' + file.name);
+            return null;
+          }
+          let regions = opts.regions || [];
+          if (!opts.sample && !opts.regions) {
+            const s = store.get('mr.a.' + key);
+            if (Array.isArray(s))
+              regions = s
+                .filter((r) => r && Array.isArray(r.pts))
+                .map((r) => ({
+                  id: r.id || uid(),
+                  cls: classIdFor(r.cls),
+                  pts: r.pts,
+                }));
+          }
+          return {
+            id: uid(),
+            name: file.name,
+            file,
+            url,
+            el,
+            w: el.naturalWidth,
+            h: el.naturalHeight,
+            thumb: makeThumb(el),
+            regions,
+            hist: [],
+            fut: [],
+            key,
+            sample: !!opts.sample,
+            orient: await jpegOrientation(file),
+          };
+        }
+        const MIME = {
+          png: 'image/png',
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          webp: 'image/webp',
+          bmp: 'image/bmp',
+          gif: 'image/gif',
+        };
+        async function importEntries(entries, label) {
+          if (busy) {
+            toast('Wait for the export to finish first');
+            return;
+          }
+          busy = true;
+          renderExport();
+          try {
+            toast('Reading ' + label + '…', 20000);
+            const proj = await parseDataset(entries);
+            const pcls = [];
+            for (const c of proj.classes)
+              if (
+                !pcls.some((k) => k.name.toLowerCase() === c.name.toLowerCase())
+              )
+                pcls.push(c);
+            if (!pcls.length)
+              throw new Error(
+                'No class list found in ' +
+                  label +
+                  '. Open a ZIP exported from Segmentation Tool.',
+              );
+            if (!proj.images.length)
+              throw new Error('No images found in ' + label + '.');
+            const real = images.filter((i) => !i.sample);
+            if (!real.length) {
+              classes = pcls.map((c) => ({
+                id: nextClassId++,
+                name: c.name,
+                color: c.color || '#888888',
+              }));
+              classes.forEach((c, i) => {
+                if (c.color === '#888888')
+                  c.color = PALETTE[i % PALETTE.length];
+              });
+              activeCls = classes[0].id;
+            } else {
+              for (const c of pcls)
+                if (
+                  !classes.some(
+                    (k) => k.name.toLowerCase() === c.name.toLowerCase(),
+                  )
+                )
+                  classes.push({
+                    id: nextClassId++,
+                    name: c.name,
+                    color: c.color || pickColor(),
+                  });
+            }
+            saveClasses();
+            const added = [];
+            let nReg = 0,
+              skip = 0;
+            for (let i = 0; i < proj.images.length; i++) {
+              const d = proj.images[i];
+              toast(
+                'Loading image ' + (i + 1) + ' of ' + proj.images.length + '…',
+                20000,
+              );
+              const blob = await d.blob(),
+                ext = (
+                  (d.name.match(/\.(\w+)$/) || [])[1] || 'png'
+                ).toLowerCase();
+              const im = await loadImage(
+                new File([blob], d.name, {
+                  type: MIME[ext] || 'image/' + ext,
+                  lastModified: 0,
+                }),
+                { regions: [] },
+              );
+              if (!im) {
+                skip++;
+                continue;
+              }
+              let regs = d.regions || [];
+              if (d.norm)
+                regs = d.norm.map((r) => ({
+                  cls: r.cls,
+                  pts: r.pts.map((p) => [p[0] * im.w, p[1] * im.h]),
+                }));
+              im.regions = regs.map((r) => ({
+                id: uid(),
+                cls: classIdFor(r.cls),
+                pts: r.pts.map((p) => [r2(p[0]), r2(p[1])]),
+              }));
+              if (d.split === 'train' || d.split === 'val') im.split = d.split;
+              store.set('mr.a.' + im.key, serializeRegions(im.regions));
+              nReg += im.regions.length;
+              added.push(im);
+            }
+            if (!added.length)
+              throw new Error(
+                skip
+                  ? 'Those images are already open.'
+                  : 'No images in ' + label + ' could be opened.',
+              );
+            images
+              .filter((i) => i.sample)
+              .forEach((i) => URL.revokeObjectURL(i.url));
+            images = real.concat(added);
+            selectImage(real.length);
+            let msg =
+              'Opened ' +
+              added.length +
+              (added.length === 1 ? ' image' : ' images') +
+              ' with ' +
+              nReg +
+              (nReg === 1 ? ' region' : ' regions') +
+              '.';
+            if (skip)
+              msg += ' ' + skip + ' skipped (already open or unreadable).';
+            if (proj.warnings.length)
+              msg += ' ' + proj.warnings.length + ' listed files were missing.';
+            if (proj.source === 'none')
+              msg +=
+                ' This ZIP has no polygons to read back (mask PNGs cannot be restored), so the images came in unlabeled.';
+            toast(
+              msg,
+              proj.source === 'none' || proj.warnings.length ? 9000 : 5000,
+            );
+          } catch (err) {
+            toast((err && err.message) || 'Could not open ' + label, 7000);
+          } finally {
+            busy = false;
+            renderExport();
+          }
+        }
+        async function importZip(file) {
+          let entries;
+          try {
+            entries = await readZip(file);
+          } catch (err) {
+            toast((err && err.message) || 'Could not read ' + file.name, 7000);
+            return;
+          }
+          await importEntries(entries, file.name);
+        }
+        async function addFiles(fileList) {
+          const zips = [...fileList].filter((f) => /\.zip$/i.test(f.name));
+          if (zips.length) {
+            for (const z of zips) await importZip(z);
+            fileList = [...fileList].filter((f) => !zips.includes(f));
+            if (!fileList.length) return;
+          }
+          const list = [...fileList].filter(
+            (f) =>
+              /^image\//.test(f.type) ||
+              /\.(png|jpe?g|webp|bmp|gif)$/i.test(f.name),
+          );
+          if (!list.length) {
+            toast('No image files found');
+            return;
+          }
+          list.sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { numeric: true }),
+          );
+          const added = [];
+          for (const f of list) {
+            const im = await loadImage(f);
+            if (im) added.push(im);
+          }
+          if (!added.length) {
+            toast('Those images are already loaded');
+            return;
+          }
+          images
+            .filter((i) => i.sample)
+            .forEach((i) => URL.revokeObjectURL(i.url));
+          images = images.filter((i) => !i.sample).concat(added);
+          selectImage(images.indexOf(added[0]));
+          toast(
+            added.length +
+              (added.length === 1 ? ' image added' : ' images added'),
+          );
+        }
+        function removeImage(i) {
+          const im = images[i];
+          if (!im) return;
+          URL.revokeObjectURL(im.url);
+          images.splice(i, 1);
+          selectImage(images.length ? Math.min(i, images.length - 1) : -1);
+        }
+        function selectImage(i) {
+          cur = i >= 0 && i < images.length ? i : -1;
+          draft = null;
+          sel = null;
+          drag = null;
+          fitView();
+          renderAll();
+        }
+
+        /* ---------- sample scene ---------- */
+        async function makeSample() {
+          const w = 960,
+            h = 640,
+            c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          const x = c.getContext('2d');
+          const sky = x.createLinearGradient(0, 0, 0, 300);
+          sky.addColorStop(0, '#8fc4ea');
+          sky.addColorStop(1, '#dcefff');
+          x.fillStyle = sky;
+          x.fillRect(0, 0, w, 300);
+          x.fillStyle = '#fff';
+          [
+            [180, 90, 46],
+            [230, 80, 36],
+            [600, 60, 40],
+            [650, 70, 50],
+            [700, 64, 34],
+          ].forEach(([a, b, r]) => {
+            x.beginPath();
+            x.arc(a, b, r, 0, 7);
+            x.fill();
+          });
+          x.fillStyle = '#5f9a3b';
+          x.fillRect(0, 300, w, 340);
+          x.fillStyle = '#4a4f55';
+          x.beginPath();
+          x.moveTo(250, 640);
+          x.lineTo(440, 300);
+          x.lineTo(520, 300);
+          x.lineTo(710, 640);
+          x.closePath();
+          x.fill();
+          x.fillStyle = '#e8e2c8';
+          [
+            [480, 320, 6, 22],
+            [482, 360, 9, 34],
+            [485, 425, 13, 52],
+            [489, 520, 19, 78],
+          ].forEach(([a, b, ww, hh]) => {
+            x.fillRect(a - ww / 2, b, ww, hh);
+          });
+          x.fillStyle = '#6b4a2f';
+          x.fillRect(112, 250, 16, 110);
+          x.fillStyle = '#2f7a34';
+          x.beginPath();
+          x.arc(120, 230, 80, 0, 7);
+          x.fill();
+          x.fillStyle = '#c93b3b';
+          x.beginPath();
+          [
+            [380, 540],
+            [380, 480],
+            [420, 478],
+            [445, 440],
+            [525, 440],
+            [550, 478],
+            [585, 482],
+            [585, 540],
+          ].forEach((p, i) =>
+            i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]),
+          );
+          x.closePath();
+          x.fill();
+          x.fillStyle = '#bfe0f5';
+          x.fillRect(452, 448, 32, 28);
+          x.fillRect(490, 448, 28, 28);
+          x.fillStyle = '#1d1d1d';
+          [
+            [418, 540],
+            [548, 540],
+          ].forEach(([a, b]) => {
+            x.beginPath();
+            x.arc(a, b, 20, 0, 7);
+            x.fill();
+          });
+          x.fillStyle = '#999';
+          [
+            [418, 540],
+            [548, 540],
+          ].forEach(([a, b]) => {
+            x.beginPath();
+            x.arc(a, b, 8, 0, 7);
+            x.fill();
+          });
+          const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+          const file = new File([blob], 'sample_street.png', {
+            type: 'image/png',
+            lastModified: 1,
+          });
+          const circle = (cx, cy, r, n = 28) =>
+            Array.from({ length: n }, (_, i) => [
+              r2(cx + r * Math.cos((i / n) * 6.2832)),
+              r2(cy + r * Math.sin((i / n) * 6.2832)),
+            ]);
+          const byName = (n) => classes.find((c) => c.name === n);
+          let regions = [];
+          if ([1, 2, 3, 4].every((id) => clsOf(id))) {
+            regions = [
+              {
+                id: uid(),
+                cls: 1,
+                pts: [
+                  [0, 0],
+                  [960, 0],
+                  [960, 300],
+                  [0, 300],
+                ],
+              },
+              {
+                id: uid(),
+                cls: 2,
+                pts: [
+                  [250, 640],
+                  [440, 300],
+                  [520, 300],
+                  [710, 640],
+                ],
+              },
+              {
+                id: uid(),
+                cls: 3,
+                pts: [
+                  [0, 300],
+                  [440, 300],
+                  [250, 640],
+                  [0, 640],
+                ],
+              },
+              {
+                id: uid(),
+                cls: 3,
+                pts: [
+                  [520, 300],
+                  [960, 300],
+                  [960, 640],
+                  [710, 640],
+                ],
+              },
+              { id: uid(), cls: 3, pts: circle(120, 230, 80) },
+              {
+                id: uid(),
+                cls: 4,
+                pts: [
+                  [380, 540],
+                  [380, 480],
+                  [420, 478],
+                  [445, 440],
+                  [525, 440],
+                  [550, 478],
+                  [585, 482],
+                  [585, 540],
+                ],
+              },
+            ];
+          }
+          return loadImage(file, { sample: true, regions });
+        }
+
+        /* ---------- view ---------- */
+        function fitView() {
+          const im = curImg();
+          if (!im || !W) return;
+          const pad = 20,
+            s = Math.min((W - pad * 2) / im.w, (H - pad * 2) / im.h);
+          view.s = Math.max(0.01, s);
+          view.ox = (W - im.w * view.s) / 2;
+          view.oy = (H - im.h * view.s) / 2;
+          updZoom();
+          draw();
+        }
+        function updZoom() {
+          $('#zoomv').textContent = Math.round(view.s * 100) + '%';
+        }
+        function zoomAt(f, sx, sy) {
+          const ns = Math.min(64, Math.max(0.02, view.s * f)),
+            k = ns / view.s;
+          view.ox = sx - (sx - view.ox) * k;
+          view.oy = sy - (sy - view.oy) * k;
+          view.s = ns;
+          updZoom();
+          draw();
+        }
+        const scr = (e) => {
+          const r = canvas.getBoundingClientRect();
+          return [e.clientX - r.left, e.clientY - r.top];
+        };
+        const toImg = (s) => [
+          (s[0] - view.ox) / view.s,
+          (s[1] - view.oy) / view.s,
+        ];
+        const toScr = (p) => [p[0] * view.s + view.ox, p[1] * view.s + view.oy];
+        function clampP(p) {
+          const im = curImg();
+          return [
+            Math.min(im.w, Math.max(0, p[0])),
+            Math.min(im.h, Math.max(0, p[1])),
+          ];
+        }
+
+        const ro = new ResizeObserver(() => {
+          const r = $('#cv').getBoundingClientRect();
+          if (!r.width) return;
+          const first = !W;
+          W = r.width;
+          H = r.height;
+          dpr = window.devicePixelRatio || 1;
+          canvas.width = Math.round(W * dpr);
+          canvas.height = Math.round(H * dpr);
+          if (first) fitView();
+          else draw();
+        });
+        ro.observe($('#cv'));
+
+        /* ---------- drawing ---------- */
+        let raf = 0;
+        function draw() {
+          if (raf) return;
+          raf = requestAnimationFrame(() => {
+            raf = 0;
+            paint();
+          });
+        }
+        function pathOf(pts, close) {
+          ctx.beginPath();
+          pts.forEach((p, i) => {
+            const q = toScr(p);
+            i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]);
+          });
+          if (close) ctx.closePath();
+        }
+        function paint() {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.clearRect(0, 0, W, H);
+          const im = curImg();
+          if (!im) return;
+          ctx.imageSmoothingEnabled = view.s < 3;
+          ctx.drawImage(im.el, view.ox, view.oy, im.w * view.s, im.h * view.s);
+          ctx.lineJoin = 'round';
+          for (const r of im.regions) {
+            const c = clsOf(r.cls),
+              col = c ? c.color : '#888';
+            pathOf(r.pts, true);
+            ctx.globalAlpha = fillOp;
+            ctx.fillStyle = col;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = r.id === sel ? 2.5 : 1.5;
+            ctx.strokeStyle = r.id === sel ? '#fff' : col;
+            ctx.stroke();
+            if (r.id === sel) {
+              pathOf(r.pts, true);
+              ctx.setLineDash([5, 4]);
+              ctx.lineWidth = 1.5;
+              ctx.strokeStyle = col;
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+          }
+          if (showNames) {
+            ctx.font = '600 11px ' + getComputedStyle(document.body).fontFamily;
+            ctx.textBaseline = 'middle';
+            for (const r of im.regions) {
+              const c = clsOf(r.cls);
+              if (!c) continue;
+              const bb = polyBBox(r.pts),
+                a = toScr([bb[0], bb[1]]);
+              const tw = ctx.measureText(c.name).width + 10,
+                x = Math.max(2, Math.min(W - tw - 2, a[0])),
+                y = Math.max(2, a[1] - 18);
+              ctx.fillStyle = c.color;
+              ctx.fillRect(x, y, tw, 16);
+              ctx.fillStyle = '#fff';
+              ctx.shadowColor = 'rgba(0,0,0,.6)';
+              ctx.shadowBlur = 2;
+              ctx.fillText(c.name, x + 5, y + 8.5);
+              ctx.shadowBlur = 0;
+            }
+          }
+          const sr = im.regions.find((r) => r.id === sel);
+          if (sr && tool === 'select') {
+            for (const p of sr.pts) {
+              const q = toScr(p);
+              ctx.fillStyle = '#fff';
+              ctx.strokeStyle = '#111';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.rect(q[0] - 4.5, q[1] - 4.5, 9, 9);
+              ctx.fill();
+              ctx.stroke();
+            }
+          }
+          if (draft) {
+            const c = clsOf(activeCls),
+              col = c ? c.color : '#fff';
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = col;
+            ctx.fillStyle = col;
+            if (draft.type === 'poly') {
+              pathOf(draft.pts, false);
+              ctx.stroke();
+              if (mouse) {
+                const a = toScr(draft.pts[draft.pts.length - 1]),
+                  b = toScr(mouse);
+                ctx.setLineDash([6, 5]);
+                ctx.beginPath();
+                ctx.moveTo(a[0], a[1]);
+                ctx.lineTo(b[0], b[1]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
+              draft.pts.forEach((p, i) => {
+                const q = toScr(p);
+                ctx.beginPath();
+                ctx.arc(q[0], q[1], i === 0 ? 6 : 3.5, 0, 7);
+                ctx.fillStyle = i === 0 ? '#fff' : col;
+                ctx.fill();
+                ctx.strokeStyle = col;
+                ctx.stroke();
+              });
+            } else if (draft.type === 'lasso') {
+              pathOf(draft.pts, false);
+              ctx.stroke();
+            } else if (draft.type === 'rect') {
+              const a = toScr(draft.a),
+                b = toScr(draft.b);
+              ctx.globalAlpha = fillOp;
+              ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+              ctx.globalAlpha = 1;
+              ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+            }
+          }
+        }
+
+        /* ---------- editing ---------- */
+        function afterChange() {
+          const im = curImg();
+          if (im && !im.sample)
+            store.set('mr.a.' + im.key, serializeRegions(im.regions));
+          renderAll();
+        }
+        function mutate(fn) {
+          const im = curImg();
+          if (!im) return;
+          im.hist.push(JSON.stringify(im.regions));
+          if (im.hist.length > 80) im.hist.shift();
+          im.fut.length = 0;
+          fn(im.regions);
+          afterChange();
+        }
+        function undo() {
+          const im = curImg();
+          if (!im) return;
+          if (draft && draft.type === 'poly') {
+            draft.pts.pop();
+            if (!draft.pts.length) draft = null;
+            draw();
+            return;
+          }
+          if (!im.hist.length) return;
+          im.fut.push(JSON.stringify(im.regions));
+          im.regions = JSON.parse(im.hist.pop());
+          if (!im.regions.some((r) => r.id === sel)) sel = null;
+          afterChange();
+        }
+        function redo() {
+          const im = curImg();
+          if (!im || !im.fut.length) return;
+          im.hist.push(JSON.stringify(im.regions));
+          im.regions = JSON.parse(im.fut.pop());
+          if (!im.regions.some((r) => r.id === sel)) sel = null;
+          afterChange();
+        }
+        function commitRegion(pts) {
+          if (pts.length < 3 || Math.abs(polyArea(pts)) < 4) {
+            draw();
+            return;
+          }
+          mutate((rs) => {
+            const r = {
+              id: uid(),
+              cls: activeCls,
+              pts: pts.map((p) => [r2(p[0]), r2(p[1])]),
+            };
+            rs.push(r);
+            sel = r.id;
+          });
+        }
+        function finishPoly() {
+          if (!draft || draft.type !== 'poly') return;
+          const pts = draft.pts;
+          draft = null;
+          if (pts.length >= 3) commitRegion(pts);
+          else draw();
+        }
+        function deleteSelected() {
+          const im = curImg();
+          if (!im || !sel) return;
+          const id = sel;
+          mutate((rs) => {
+            const i = rs.findIndex((r) => r.id === id);
+            if (i >= 0) rs.splice(i, 1);
+          });
+          sel = null;
+          renderAll();
+        }
+        const hitVertex = (r, s) =>
+          r.pts.findIndex((q) => {
+            const p = toScr(q);
+            return Math.hypot(p[0] - s[0], p[1] - s[1]) < 9;
+          });
+        function hitRegion(rs, p) {
+          for (let i = rs.length - 1; i >= 0; i--)
+            if (pointInPoly(p, rs[i].pts)) return rs[i];
+          return null;
+        }
+
+        canvas.addEventListener('pointerdown', (e) => {
+          const im = curImg();
+          if (!im) return;
+          if (e.button === 1 || (e.button === 0 && spaceDown)) {
+            pan = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            setCursor();
+            return;
+          }
+          if (e.button !== 0) return;
+          canvas.setPointerCapture(e.pointerId);
+          const s = scr(e),
+            p = clampP(toImg(s));
+          if (tool === 'polygon') {
+            if (draft && draft.type === 'poly') {
+              const f = toScr(draft.pts[0]);
+              if (
+                draft.pts.length >= 3 &&
+                Math.hypot(f[0] - s[0], f[1] - s[1]) < 9
+              )
+                finishPoly();
+              else draft.pts.push(p);
+            } else draft = { type: 'poly', pts: [p] };
+          } else if (tool === 'lasso') draft = { type: 'lasso', pts: [p] };
+          else if (tool === 'rect') draft = { type: 'rect', a: p, b: p };
+          else {
+            const sr = im.regions.find((r) => r.id === sel);
+            if (sr) {
+              const vi = hitVertex(sr, s);
+              if (vi >= 0) {
+                if (e.altKey) {
+                  if (sr.pts.length > 3)
+                    mutate(() => {
+                      sr.pts.splice(vi, 1);
+                    });
+                  return;
+                }
+                drag = {
+                  kind: 'v',
+                  r: sr,
+                  i: vi,
+                  snap: JSON.stringify(im.regions),
+                  moved: false,
+                };
+                return;
+              }
+            }
+            const hit = hitRegion(im.regions, toImg(s));
+            if (hit) {
+              sel = hit.id;
+              drag = {
+                kind: 'm',
+                r: hit,
+                start: toImg(s),
+                orig: hit.pts.map((q) => q.slice()),
+                snap: JSON.stringify(im.regions),
+                moved: false,
+              };
+            } else sel = null;
+            renderRegions();
+          }
+          draw();
+        });
+        canvas.addEventListener('pointermove', (e) => {
+          const im = curImg();
+          if (!im) return;
+          if (pan) {
+            view.ox = pan.ox + e.clientX - pan.x;
+            view.oy = pan.oy + e.clientY - pan.y;
+            draw();
+            return;
+          }
+          const s = scr(e),
+            pi = toImg(s);
+          mouse = clampP(pi);
+          $('#coord').textContent =
+            Math.round(pi[0]) + ', ' + Math.round(pi[1]);
+          if (draft) {
+            if (draft.type === 'lasso') {
+              const l = toScr(draft.pts[draft.pts.length - 1]);
+              if (Math.hypot(l[0] - s[0], l[1] - s[1]) > 2.5)
+                draft.pts.push(mouse);
+            } else if (draft.type === 'rect') draft.b = mouse;
+            draw();
+          } else if (drag) {
+            if (!drag.moved) {
+              im.hist.push(drag.snap);
+              if (im.hist.length > 80) im.hist.shift();
+              im.fut.length = 0;
+              drag.moved = true;
+            }
+            if (drag.kind === 'v') drag.r.pts[drag.i] = clampP(pi);
+            else {
+              const dx = pi[0] - drag.start[0],
+                dy = pi[1] - drag.start[1];
+              drag.r.pts = drag.orig.map((q) => [q[0] + dx, q[1] + dy]);
+            }
+            draw();
+          }
+        });
+        canvas.addEventListener('pointerup', (e) => {
+          if (pan) {
+            pan = null;
+            setCursor();
+            return;
+          }
+          if (draft && draft.type === 'lasso') {
+            const pts = simplify(draft.pts, 1.5 / view.s);
+            draft = null;
+            commitRegion(pts);
+          } else if (draft && draft.type === 'rect') {
+            const a = draft.a,
+              b = draft.b;
+            draft = null;
+            if (
+              Math.abs(b[0] - a[0]) * view.s > 3 &&
+              Math.abs(b[1] - a[1]) * view.s > 3
+            )
+              commitRegion([
+                [a[0], a[1]],
+                [b[0], a[1]],
+                [b[0], b[1]],
+                [a[0], b[1]],
+              ]);
+            else draw();
+          } else if (drag) {
+            const d = drag;
+            drag = null;
+            if (d.moved) {
+              d.r.pts = d.r.pts.map((q) => [r2(q[0]), r2(q[1])]);
+              afterChange();
+            }
+          }
+        });
+        canvas.addEventListener('pointerleave', () => {
+          mouse = null;
+          $('#coord').innerHTML = '&nbsp;';
+          draw();
+        });
+        canvas.addEventListener('dblclick', (e) => {
+          const im = curImg();
+          if (!im) return;
+          if (draft && draft.type === 'poly') {
+            draft.pts.pop();
+            finishPoly();
+            return;
+          }
+          if (tool !== 'select') return;
+          const sr = im.regions.find((r) => r.id === sel);
+          if (!sr) return;
+          const s = scr(e);
+          let best = null;
+          for (let i = 0; i < sr.pts.length; i++) {
+            const a = toScr(sr.pts[i]),
+              b = toScr(sr.pts[(i + 1) % sr.pts.length]),
+              d = segDist(s, a, b);
+            if (d.d < 8 && (!best || d.d < best.d))
+              best = { d: d.d, i, pt: toImg(d.pt) };
+          }
+          if (best)
+            mutate(() => {
+              sr.pts.splice(best.i + 1, 0, [r2(best.pt[0]), r2(best.pt[1])]);
+            });
+        });
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        canvas.addEventListener(
+          'wheel',
+          (e) => {
+            if (!curImg()) return;
+            e.preventDefault();
+            const s = scr(e);
+            zoomAt(
+              Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)),
+              s[0],
+              s[1],
+            );
+          },
+          { passive: false },
+        );
+
+        function setCursor() {
+          canvas.style.cursor =
+            pan || spaceDown
+              ? 'grabbing'
+              : tool === 'select'
+                ? 'default'
+                : 'crosshair';
+        }
+        const HINTS = {
+          polygon:
+            'Click to place points. Click the first point, double-click or press Enter to close. Backspace removes the last point.',
+          lasso: 'Press and drag around the area. Release to close the shape.',
+          rect: 'Drag a box over the area.',
+          select:
+            'Click a region to select it. Drag a point to reshape, drag inside to move. Double-click an edge to add a point, Alt-click a point to remove it. Delete removes the region.',
+        };
+        function setTool(t) {
+          tool = t;
+          draft = null;
+          drag = null;
+          document
+            .querySelectorAll('[data-tool]')
+            .forEach((b) =>
+              b.setAttribute('aria-pressed', b.dataset.tool === t),
+            );
+          $('#hint').textContent =
+            HINTS[t] + ' Scroll to zoom, hold Space and drag to pan.';
+          setCursor();
+          draw();
+        }
+        document
+          .querySelectorAll('[data-tool]')
+          .forEach((b) =>
+            b.addEventListener('click', () => setTool(b.dataset.tool)),
+          );
+
+        /* ---------- lists ---------- */
+        function renderImages() {
+          $('#imgHead').textContent = 'Images (' + images.length + ')';
+          $('#imgList').innerHTML = images
+            .map((im, i) => {
+              const n = im.regions.length;
+              return `<li class="im ${i === cur ? 'cur' : ''}" data-i="${i}"><img class="th" alt="" src="${im.thumb}"><div style="min-width:0"><div class="nm" title="${esc(im.name)}">${esc(im.name)}</div><div class="meta ${n ? 'done' : ''}">${n ? n + (n === 1 ? ' region' : ' regions') : 'no regions'} · ${im.w}×${im.h}</div></div><button type="button" class="x" data-rm="${i}" title="Remove from this session" aria-label="Remove ${esc(im.name)}">×</button></li>`;
+            })
+            .join('');
+          const im = curImg();
+          $('#sampleChip').hidden = !(im && im.sample);
+          $('#emptyState').hidden = images.length > 0;
+        }
+        function regionCountFor(id) {
+          let n = 0;
+          for (const im of images)
+            for (const r of im.regions) if (r.cls === id) n++;
+          return n;
+        }
+        function renderClasses() {
+          const im = curImg();
+          $('#classList').innerHTML = classes
+            .map((c, i) => {
+              const here = im
+                  ? im.regions.filter((r) => r.cls === c.id).length
+                  : 0,
+                total = regionCountFor(c.id);
+              return `<li class="cls ${c.id === activeCls ? 'active' : ''}" data-id="${c.id}"><input type="color" value="${c.color}" data-color="${c.id}" aria-label="Color for ${esc(c.name)}"><input type="text" class="nm" value="${esc(c.name)}" data-name="${c.id}" maxlength="40" aria-label="Class name"><span class="cnt" title="Regions on this image">${here}</span>${i < 9 ? `<kbd>${i + 1}</kbd>` : '<span></span>'}<button type="button" class="x" data-del="${c.id}" ${total || classes.length < 2 ? `disabled title="${total ? 'Used by ' + total + ' regions' : 'Keep at least one class'}"` : 'title="Delete class"'} aria-label="Delete ${esc(c.name)}">×</button></li>`;
+            })
+            .join('');
+        }
+        function renderRegions() {
+          const im = curImg(),
+            rs = im ? im.regions : [];
+          $('#noReg').hidden = rs.length > 0;
+          $('#regList').innerHTML = rs
+            .map((r) => {
+              const c = clsOf(r.cls);
+              return `<li class="reg ${r.id === sel ? 'sel' : ''}" data-id="${r.id}"><span class="dot" style="background:${c ? c.color : '#888'}"></span><select data-rcls="${r.id}" aria-label="Class of region">${classes.map((k) => `<option value="${k.id}" ${k.id === r.cls ? 'selected' : ''}>${esc(k.name)}</option>`).join('')}</select><span class="pts">${r.pts.length} pts</span><button type="button" class="x" data-rdel="${r.id}" title="Delete region" aria-label="Delete region">×</button></li>`;
+            })
+            .join('');
+        }
+        function setActive(id) {
+          activeCls = id;
+          document
+            .querySelectorAll('#classList .cls')
+            .forEach((li) =>
+              li.classList.toggle('active', +li.dataset.id === id),
+            );
+          draw();
+        }
+        $('#imgList').addEventListener('click', (e) => {
+          const rm = e.target.closest('[data-rm]');
+          if (rm) {
+            removeImage(+rm.dataset.rm);
+            return;
+          }
+          const li = e.target.closest('.im');
+          if (li) selectImage(+li.dataset.i);
+        });
+        $('#classList').addEventListener('click', (e) => {
+          const del = e.target.closest('[data-del]');
+          if (del) {
+            if (del.disabled) return;
+            const id = +del.dataset.del;
+            classes = classes.filter((c) => c.id !== id);
+            if (activeCls === id) activeCls = classes[0].id;
+            saveClasses();
+            renderAll();
+            return;
+          }
+          if (e.target.closest('input[type=color]')) return;
+          const li = e.target.closest('.cls');
+          if (li) setActive(+li.dataset.id);
+        });
+        $('#classList').addEventListener('focusin', (e) => {
+          const li = e.target.closest('.cls');
+          if (li) setActive(+li.dataset.id);
+        });
+        $('#classList').addEventListener('input', (e) => {
+          const t = e.target;
+          if (t.dataset.color) {
+            const c = clsOf(+t.dataset.color);
+            c.color = t.value;
+            saveClasses();
+            renderRegions();
+            draw();
+          }
+        });
+        $('#classList').addEventListener('change', (e) => {
+          const t = e.target;
+          if (!t.dataset.name) return;
+          const c = clsOf(+t.dataset.name),
+            v = t.value.trim();
+          if (
+            !v ||
+            classes.some(
+              (k) => k.id !== c.id && k.name.toLowerCase() === v.toLowerCase(),
+            )
+          ) {
+            t.value = c.name;
+            toast(
+              v ? 'That class name is already used' : 'A class needs a name',
+            );
+            return;
+          }
+          c.name = v;
+          saveClasses();
+          renderRegions();
+          renderExport();
+          draw();
+        });
+        $('#addCls').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const inp = $('#newCls'),
+            v = inp.value.trim();
+          if (!v) return;
+          if (classes.some((k) => k.name.toLowerCase() === v.toLowerCase())) {
+            toast('That class name is already used');
+            return;
+          }
+          if (classes.length >= 255) {
+            toast('Mask PNGs hold up to 255 classes');
+            return;
+          }
+          const c = { id: nextClassId++, name: v, color: pickColor() };
+          classes.push(c);
+          activeCls = c.id;
+          inp.value = '';
+          saveClasses();
+          renderAll();
+        });
+        $('#regList').addEventListener('click', (e) => {
+          const del = e.target.closest('[data-rdel]');
+          if (del) {
+            const id = del.dataset.rdel;
+            mutate((rs) => {
+              const i = rs.findIndex((r) => r.id === id);
+              if (i >= 0) rs.splice(i, 1);
+            });
+            if (sel === id) sel = null;
+            renderAll();
+            return;
+          }
+          if (e.target.closest('select')) return;
+          const li = e.target.closest('.reg');
+          if (li) {
+            sel = li.dataset.id;
+            if (tool !== 'select') setTool('select');
+            renderRegions();
+            draw();
+          }
+        });
+        $('#regList').addEventListener('change', (e) => {
+          const t = e.target;
+          if (!t.dataset.rcls) return;
+          mutate((rs) => {
+            const r = rs.find((r) => r.id === t.dataset.rcls);
+            if (r) r.cls = +t.value;
+          });
+        });
+
+        /* ---------- tabs ---------- */
+        function showTab(name) {
+          $('#paneLabel').hidden = name !== 'label';
+          $('#paneExport').hidden = name !== 'export';
+          $('#tabL').setAttribute('aria-selected', name === 'label');
+          $('#tabE').setAttribute('aria-selected', name === 'export');
+          if (name === 'export') renderExport();
+        }
+        document
+          .querySelectorAll('[data-tab]')
+          .forEach((b) =>
+            b.addEventListener('click', () => showTab(b.dataset.tab)),
+          );
+
+        /* ---------- export ---------- */
+        function readOpts() {
+          const root =
+            ($('#xroot').value || '')
+              .trim()
+              .replace(/[^\w.-]+/g, '_')
+              .replace(/^_+|_+$/g, '') || 'dataset';
+          return {
+            root,
+            valPct: +$('#xval').value,
+            masks: $('#xmask').checked,
+            yolo: $('#xyolo').checked,
+            coco: $('#xcoco').checked,
+            onlyLabeled: $('#xonly').checked,
+          };
+        }
+        function renderExport() {
+          if ($('#paneExport').hidden) return;
+          const o = readOpts(),
+            plan = planExport(images, o);
+          $('#xvalo').textContent = o.valPct + '%';
+          $('#tree').textContent = treeText(plan, o);
+          const nReg = plan.items.reduce(
+              (a, it) => a + it.img.regions.length,
+              0,
+            ),
+            nUn = plan.skipped.length;
+          const unused = classes
+            .filter(
+              (c) =>
+                !plan.items.some((it) =>
+                  it.img.regions.some((r) => r.cls === c.id),
+                ),
+            )
+            .map((c) => c.name);
+          $('#xsum').textContent = plan.items.length
+            ? `${plan.items.length} images (${plan.counts.train} train, ${plan.counts.val} val), ${nReg} regions, ${classes.length} classes.` +
+              (nUn ? ` ${nUn} unlabeled kept in unlabeled/.` : '') +
+              (unused.length
+                ? ` No regions yet for: ${unused.join(', ')}.`
+                : '')
+            : nUn
+              ? `No labeled images yet. ${nUn} unlabeled images will be saved in unlabeled/ so you can continue later.`
+              : 'No images to export yet. Add images first.';
+          $('#xzip').disabled = busy || !(plan.items.length || nUn);
+          $('#xdir').disabled = busy || !(plan.items.length || nUn);
+          const m = $('#xmsg');
+          if (!busy && framed && !downloadsCap && !m.textContent) {
+            m.textContent =
+              'Saving files is not available in this view. Open the page in the Claude app or as a standalone file.';
+            m.className = 'note err';
+          }
+        }
+        ['xroot', 'xval', 'xmask', 'xyolo', 'xcoco', 'xonly'].forEach((id) =>
+          $('#' + id).addEventListener('input', renderExport),
+        );
+
+        async function imageBytes(it) {
+          const im = it.img;
+          if (im.orient > 1) {
+            const c = document.createElement('canvas');
+            c.width = im.w;
+            c.height = im.h;
+            c.getContext('2d').drawImage(im.el, 0, 0);
+            const b = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.95));
+            return new Uint8Array(await b.arrayBuffer());
+          }
+          return new Uint8Array(await im.file.arrayBuffer());
+        }
+        function xmsg(t, k) {
+          const m = $('#xmsg');
+          m.textContent = t;
+          m.className = 'note' + (k ? ' ' + k : '');
+        }
+        async function writeFolder(dir, entries, progress) {
+          for (let i = 0; i < entries.length; i++) {
+            const e = entries[i],
+              data = await e.get(),
+              parts = e.path.split('/');
+            let d = dir;
+            for (let k = 0; k < parts.length - 1; k++)
+              d = await d.getDirectoryHandle(parts[k], { create: true });
+            const fh = await d.getFileHandle(parts[parts.length - 1], {
+                create: true,
+              }),
+              w = await fh.createWritable();
+            await w.write(data);
+            await w.close();
+            progress(i + 1, entries.length);
+          }
+        }
+        async function deliver(blob, filename) {
+          if (downloadsCap) {
+            try {
+              await downloadsCap.save({ filename, data: blob });
+              return 'saved';
+            } catch (err) {
+              if (err && err.code === 'declined') return 'declined';
+              throw err;
+            }
+          }
+          if (framed)
+            throw new Error('Saving files is not available in this view.');
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 15000);
+          return 'saved';
+        }
+        async function doExport(mode) {
+          if (busy) return;
+          const o = readOpts(),
+            plan = planExport(images, o);
+          if (!plan.items.length && !plan.skipped.length) return;
+          if (o.valPct > 0)
+            plan.items.forEach((it) => {
+              it.img.split = it.split;
+            });
+          const entries = entryList(plan, classes, o, imageBytes);
+          busy = true;
+          renderExport();
+          try {
+            const prog = (i, n) =>
+              xmsg('Writing ' + i + ' of ' + n + ' files…');
+            if (mode === 'dir') {
+              const dir = await window.showDirectoryPicker({
+                mode: 'readwrite',
+              });
+              await writeFolder(dir, entries, prog);
+              xmsg(
+                'Saved ' +
+                  entries.length +
+                  ' files into “' +
+                  o.root +
+                  '” inside the folder you picked.',
+                'ok',
+              );
+            } else {
+              if (typeof CompressionStream === 'undefined')
+                throw new Error(
+                  'This browser cannot compress mask PNGs. Use a current Chrome, Edge, Safari or Firefox.',
+                );
+              xmsg('Building ZIP…');
+              const blob = await buildZip(entries, prog),
+                r = await deliver(blob, o.root + '.zip');
+              if (r === 'saved')
+                xmsg(
+                  'Saved ' +
+                    o.root +
+                    '.zip (' +
+                    entries.length +
+                    ' files, ' +
+                    (blob.size / 1048576).toFixed(1) +
+                    ' MB).',
+                  'ok',
+                );
+              else xmsg('Save cancelled.');
+            }
+          } catch (err) {
+            if (err && err.name === 'AbortError') xmsg('Cancelled.');
+            else
+              xmsg(
+                'Export failed: ' +
+                  ((err && err.message) ||
+                    (err && err.code) ||
+                    'unknown error'),
+                'err',
+              );
+          } finally {
+            busy = false;
+            renderExport();
+          }
+        }
+        $('#xzip').addEventListener('click', () => doExport('zip'));
+        $('#xdir').addEventListener('click', () => doExport('dir'));
+
+        /* ---------- misc wiring ---------- */
+        function renderAll() {
+          renderImages();
+          renderClasses();
+          renderRegions();
+          renderExport();
+          draw();
+        }
+        $('#addFiles').addEventListener('click', () => $('#files').click());
+        $('#emptyAdd').addEventListener('click', () => $('#files').click());
+        $('#addFolder').addEventListener('click', () => $('#folder').click());
+        $('#openZip').addEventListener('click', () => $('#zipin').click());
+        $('#emptyZip').addEventListener('click', () => $('#zipin').click());
+        $('#zipin').addEventListener('change', (e) => {
+          const f = [...e.target.files];
+          e.target.value = '';
+          if (f.length) addFiles(f);
+        });
+        $('#files').addEventListener('change', (e) => {
+          const f = [...e.target.files];
+          e.target.value = '';
+          addFiles(f);
+        });
+        $('#folder').addEventListener('change', (e) => {
+          const f = [...e.target.files];
+          e.target.value = '';
+          if (
+            f.some((x) =>
+              /(^|\/)(project|classes)\.json$/i.test(
+                x.webkitRelativePath || '',
+              ),
+            )
+          )
+            importEntries(
+              f.map((x) => ({
+                path: x.webkitRelativePath || x.name,
+                blob: async () => x,
+              })),
+              'the folder',
+            );
+          else addFiles(f);
+        });
+        $('#undo').addEventListener('click', undo);
+        $('#redo').addEventListener('click', redo);
+        $('#fit').addEventListener('click', fitView);
+        $('#zin').addEventListener('click', () => zoomAt(1.4, W / 2, H / 2));
+        $('#zout').addEventListener('click', () =>
+          zoomAt(1 / 1.4, W / 2, H / 2),
+        );
+        $('#op').addEventListener('input', (e) => {
+          fillOp = e.target.value / 100;
+          draw();
+        });
+        $('#names').addEventListener('change', (e) => {
+          showNames = e.target.checked;
+          draw();
+        });
+
+        const stage = $('#stage');
+        let dragDepth = 0;
+        window.addEventListener('dragenter', (e) => {
+          if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+            dragDepth++;
+            stage.classList.add('dragging');
+          }
+        });
+        window.addEventListener('dragleave', () => {
+          dragDepth = Math.max(0, dragDepth - 1);
+          if (!dragDepth) stage.classList.remove('dragging');
+        });
+        window.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+        window.addEventListener('drop', (e) => {
+          e.preventDefault();
+          dragDepth = 0;
+          stage.classList.remove('dragging');
+          if (e.dataTransfer && e.dataTransfer.files.length)
+            addFiles(e.dataTransfer.files);
+        });
+        window.addEventListener('paste', (e) => {
+          if (e.clipboardData && e.clipboardData.files.length) {
+            const f = [...e.clipboardData.files].filter((x) =>
+              /^image\//.test(x.type),
+            );
+            if (f.length)
+              addFiles(
+                f.map((x, i) =>
+                  x.name && x.name !== 'image.png'
+                    ? x
+                    : new File([x], 'pasted_' + Date.now() + '_' + i + '.png', {
+                        type: x.type,
+                        lastModified: Date.now() + i,
+                      }),
+                ),
+              );
+          }
+        });
+
+        window.addEventListener('keydown', (e) => {
+          const t = e.target,
+            typing =
+              t &&
+              ((t.tagName === 'INPUT' &&
+                t.type !== 'checkbox' &&
+                t.type !== 'range') ||
+                t.tagName === 'SELECT' ||
+                t.tagName === 'TEXTAREA');
+          if (typing) {
+            if (e.key === 'Escape') t.blur();
+            return;
+          }
+          const k = e.key,
+            mod = e.ctrlKey || e.metaKey;
+          if (k === ' ') {
+            if (t && t.tagName === 'BUTTON') return;
+            if (!spaceDown) {
+              spaceDown = true;
+              setCursor();
+            }
+            e.preventDefault();
+            return;
+          }
+          if (mod && k.toLowerCase() === 'z') {
+            e.preventDefault();
+            e.shiftKey ? redo() : undo();
+            return;
+          }
+          if (mod && k.toLowerCase() === 'y') {
+            e.preventDefault();
+            redo();
+            return;
+          }
+          if (mod || e.altKey) return;
+          if (/^[1-9]$/.test(k)) {
+            const c = classes[+k - 1];
+            if (c) {
+              setActive(c.id);
+              if (sel && tool === 'select') {
+                const im = curImg(),
+                  r = im && im.regions.find((r) => r.id === sel);
+                if (r && r.cls !== c.id)
+                  mutate(() => {
+                    r.cls = c.id;
+                  });
+              }
+            }
+            return;
+          }
+          const lk = k.toLowerCase();
+          if (lk === 'p') setTool('polygon');
+          else if (lk === 'l') setTool('lasso');
+          else if (lk === 'b') setTool('rect');
+          else if (lk === 'v') setTool('select');
+          else if (lk === 'f') fitView();
+          else if (k === 'Enter') finishPoly();
+          else if (k === 'Escape') {
+            if (draft) {
+              draft = null;
+              draw();
+            } else if (sel) {
+              sel = null;
+              renderRegions();
+              draw();
+            }
+          } else if (k === 'Backspace' || k === 'Delete') {
+            if (draft && draft.type === 'poly') {
+              draft.pts.pop();
+              if (!draft.pts.length) draft = null;
+              draw();
+            } else deleteSelected();
+            e.preventDefault();
+          } else if (k === '[' || k === 'PageUp') {
+            if (cur > 0) selectImage(cur - 1);
+          } else if (k === ']' || k === 'PageDown') {
+            if (cur < images.length - 1) selectImage(cur + 1);
+          }
+        });
+        window.addEventListener('keyup', (e) => {
+          if (e.key === ' ') {
+            spaceDown = false;
+            setCursor();
+          }
+        });
+
+        /* ---------- boot ---------- */
+        (async () => {
+          setTool('polygon');
+          renderAll();
+          const s = await makeSample();
+          if (s && !images.length) {
+            images = [s];
+            selectImage(0);
+          }
+        })();
+      })();
+    </script>
+  </body>
+</html>
